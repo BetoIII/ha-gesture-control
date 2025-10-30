@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HA Gesture Control</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+
+    <!-- Socket.IO Client -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+
+    <!-- Custom Styles -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white shadow-md">
+        <div class="container mx-auto px-4 py-4">
+            <div class="flex items-center justify-between">
+                <!-- Logo and Title -->
+                <div class="flex items-center space-x-3">
+                    <i class="fas fa-hand-paper text-3xl text-blue-600"></i>
+                    <h1 class="text-2xl font-bold text-gray-800">HA Gesture Control</h1>
+                </div>
+
+                <!-- Control Toggles -->
+                <div class="flex items-center space-x-6">
+                    <!-- Gesture Mode Toggle -->
+                    <div class="flex items-center space-x-3">
+                        <span class="text-sm font-medium text-gray-700">Gesture Mode</span>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="gestureToggle" class="sr-only peer">
+                            <div class="w-14 h-7 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-blue-600"></div>
+                        </label>
+                    </div>
+
+                    <!-- Voice Mode Toggle (Disabled for now) -->
+                    <div class="flex items-center space-x-3 opacity-50" title="Coming soon">
+                        <span class="text-sm font-medium text-gray-700">Voice Mode</span>
+                        <label class="relative inline-flex items-center cursor-not-allowed">
+                            <input type="checkbox" id="voiceToggle" class="sr-only peer" disabled>
+                            <div class="w-14 h-7 bg-gray-300 rounded-full"></div>
+                        </label>
+                    </div>
+
+                    <!-- Settings Icon -->
+                    <button id="settingsBtn" class="text-gray-600 hover:text-blue-600 transition-colors">
+                        <i class="fas fa-cog text-2xl"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="container mx-auto px-4 py-6">
+        <!-- Gesture Mode Inactive State -->
+        <div id="inactiveState" class="text-center py-20">
+            <i class="fas fa-hand-paper text-6xl text-gray-400 mb-6"></i>
+            <h2 class="text-3xl font-bold text-gray-700 mb-4">Gesture Control Disabled</h2>
+            <p class="text-gray-600 mb-8">Enable gesture mode using the toggle above to start controlling your smart home devices with hand gestures.</p>
+            <div class="bg-blue-50 border border-blue-200 rounded-lg p-6 max-w-2xl mx-auto text-left">
+                <h3 class="text-lg font-semibold text-blue-900 mb-3">
+                    <i class="fas fa-info-circle mr-2"></i>Getting Started
+                </h3>
+                <ul class="space-y-2 text-blue-800">
+                    <li><i class="fas fa-check-circle text-blue-600 mr-2"></i>Make sure your camera is connected</li>
+                    <li><i class="fas fa-check-circle text-blue-600 mr-2"></i>Ensure good lighting for best gesture recognition</li>
+                    <li><i class="fas fa-check-circle text-blue-600 mr-2"></i>Position yourself 1-2 meters from the camera</li>
+                    <li><i class="fas fa-check-circle text-blue-600 mr-2"></i>Toggle gesture mode ON when ready</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Gesture Mode Active State -->
+        <div id="activeState" class="hidden">
+            <div class="flex gap-6">
+                <!-- Left Side Panel (25% width) -->
+                <div class="w-1/4 space-y-4">
+                    <!-- Status Card -->
+                    <div class="bg-white rounded-lg shadow-md p-4">
+                        <div class="flex items-center space-x-2 mb-3">
+                            <div class="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+                            <span class="font-semibold text-gray-800">Gesture Detection: ACTIVE</span>
+                        </div>
+                        <div class="text-sm text-gray-600">
+                            <p>Camera: <span id="cameraStatus" class="font-medium text-green-600">Initializing...</span></p>
+                        </div>
+                    </div>
+
+                    <!-- Available Gestures Card -->
+                    <div class="bg-white rounded-lg shadow-md p-4">
+                        <h3 class="font-semibold text-gray-800 mb-4 flex items-center">
+                            <i class="fas fa-list-ul mr-2 text-blue-600"></i>
+                            Available Gestures
+                        </h3>
+                        <div id="gestureList" class="space-y-2">
+                            <!-- Gestures will be loaded dynamically -->
+                            <div class="text-center py-8 text-gray-400">
+                                <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                                <p class="text-sm">Loading gestures...</p>
+                            </div>
+                        </div>
+
+                        <!-- Add Gesture Button -->
+                        <button id="addGestureBtn" class="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors flex items-center justify-center">
+                            <i class="fas fa-plus mr-2"></i>
+                            Add Gesture Mapping
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Right Camera Feed (75% width) -->
+                <div class="w-3/4">
+                    <div class="bg-white rounded-lg shadow-md overflow-hidden relative" id="cameraContainer">
+                        <!-- Camera Feed -->
+                        <div class="relative bg-gray-900">
+                            <img id="cameraFeed" src="/camera_feed" alt="Camera Feed" class="w-full h-auto">
+
+                            <!-- Camera Loading State -->
+                            <div id="cameraLoading" class="absolute inset-0 flex items-center justify-center bg-gray-900">
+                                <div class="text-center">
+                                    <i class="fas fa-camera text-4xl text-gray-600 mb-4"></i>
+                                    <p class="text-gray-400">Initializing camera...</p>
+                                </div>
+                            </div>
+
+                            <!-- Detection Panel (Floating Overlay) -->
+                            <div id="detectionPanel" class="absolute top-4 left-1/2 transform -translate-x-1/2 bg-blue-500 bg-opacity-90 text-white px-6 py-4 rounded-lg shadow-lg hidden">
+                                <div class="text-center">
+                                    <p class="text-sm font-medium mb-1">Detected:</p>
+                                    <p id="detectedGesture" class="text-2xl font-bold">-</p>
+                                    <p class="text-sm mt-1">Confidence: <span id="detectedConfidence" class="font-semibold">-</span></p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Status Bar (Bottom) -->
+    <div id="statusBar" class="fixed bottom-0 left-0 right-0 bg-gray-800 text-white py-2 px-4 text-sm">
+        <div class="container mx-auto flex items-center justify-between">
+            <div class="flex items-center space-x-4">
+                <span id="connectionStatus" class="flex items-center">
+                    <i class="fas fa-circle text-gray-500 mr-2"></i>
+                    Connecting...
+                </span>
+            </div>
+            <div id="lastAction" class="text-gray-400">
+                Last Action: None
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="fixed top-4 right-4 z-50 space-y-2">
+        <!-- Toasts will be dynamically added here -->
+    </div>
+
+    <!-- Configuration Modal -->
+    <div id="configModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+        <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <!-- Modal Header -->
+            <div class="flex items-center justify-between p-6 border-b">
+                <h2 class="text-2xl font-bold text-gray-800">
+                    <i class="fas fa-cog mr-2 text-blue-600"></i>
+                    Configuration
+                </h2>
+                <button id="closeModalBtn" class="text-gray-500 hover:text-gray-700 transition-colors">
+                    <i class="fas fa-times text-2xl"></i>
+                </button>
+            </div>
+
+            <!-- Modal Body -->
+            <div class="p-6">
+                <p class="text-gray-600 mb-6">Manage your gesture mappings and system settings.</p>
+
+                <!-- Configuration content will be added here -->
+                <div id="configContent">
+                    <div class="text-center py-8 text-gray-400">
+                        <i class="fas fa-cog fa-spin text-3xl mb-3"></i>
+                        <p>Configuration editor coming soon...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="flex items-center justify-end space-x-3 p-6 border-t">
+                <button id="cancelConfigBtn" class="px-4 py-2 text-gray-700 bg-gray-200 hover:bg-gray-300 rounded-lg transition-colors">
+                    Cancel
+                </button>
+                <button id="saveConfigBtn" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
+                    <i class="fas fa-save mr-2"></i>
+                    Save Changes
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript -->
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/websocket.js') }}"></script>
+</body>
+</html>
