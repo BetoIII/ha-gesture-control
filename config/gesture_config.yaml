@@ -1,0 +1,182 @@
+# HA Gesture Control Configuration
+# This file defines gesture-to-device mappings and system settings
+
+# Home Assistant Configuration
+homeassistant:
+  # MCP Server URL (Server-Sent Events endpoint)
+  mcp_url: "http://localhost:8123/mcp_server/sse"
+
+  # Environment variable name containing the long-lived access token
+  # Generate token at: http://YOUR_HA_IP:8123/profile
+  token_env_var: "HA_TOKEN"
+
+  # Base URL for REST API (fallback)
+  base_url: "http://localhost:8123"
+
+# Gesture Recognition Settings
+gesture_recognition:
+  # Minimum confidence threshold (0.0 - 1.0)
+  # Only gestures with confidence >= this value will trigger actions
+  confidence_threshold: 0.8
+
+  # Cooldown period in seconds between identical gestures
+  # Prevents duplicate triggers
+  cooldown_seconds: 2
+
+  # Enable multi-hand detection (detect up to 2 hands simultaneously)
+  enable_multihand: true
+
+  # Minimum gesture hold time in seconds
+  # Gesture must be held for this duration before triggering
+  min_hold_time: 0.5
+
+# Socket Communication Settings
+socket_communication:
+  # Communication type: "tcp" or "unix"
+  type: "tcp"
+
+  # TCP socket settings (used if type is "tcp")
+  host: "localhost"
+  port: 5555
+
+  # Unix socket path (used if type is "unix")
+  # unix_socket_path: "/tmp/gesture_control.sock"
+
+# Logging Configuration
+logging:
+  level: "INFO"  # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  file: "logs/gesture_control.log"
+  max_file_size_mb: 10
+  backup_count: 3
+
+# Gesture Mappings
+# Test device: light.9_kitchen_shelf_lamp
+# This lamp supports: on/off, brightness, color temperature, RGB color
+gesture_mappings:
+
+  # ====================
+  # Basic On/Off Control
+  # ====================
+
+  - name: "Kitchen Shelf Lamp On"
+    gesture: "Open_Palm"
+    hand: "Right"  # Options: "Left", "Right", "Either"
+    confidence: 0.8
+    action:
+      entity_id: "light.9_kitchen_shelf_lamp"
+      service: "turn_on"
+      data: {}
+
+  - name: "Kitchen Shelf Lamp Off"
+    gesture: "Closed_Fist"
+    hand: "Right"
+    confidence: 0.8
+    action:
+      entity_id: "light.9_kitchen_shelf_lamp"
+      service: "turn_off"
+      data: {}
+
+  # ====================
+  # Brightness Control
+  # ====================
+
+  - name: "Increase Brightness"
+    gesture: "Pointing_Up"
+    hand: "Left"
+    confidence: 0.8
+    action:
+      entity_id: "light.9_kitchen_shelf_lamp"
+      service: "turn_on"
+      data:
+        brightness_step_pct: 20  # Increase by 20%
+
+  - name: "Decrease Brightness"
+    gesture: "Thumb_Down"
+    hand: "Left"
+    confidence: 0.8
+    action:
+      entity_id: "light.9_kitchen_shelf_lamp"
+      service: "turn_on"
+      data:
+        brightness_step_pct: -20  # Decrease by 20%
+
+  # ====================
+  # Color Temperature Control
+  # ====================
+
+  - name: "Set Warm White"
+    gesture: "Thumb_Up"
+    hand: "Left"
+    confidence: 0.8
+    action:
+      entity_id: "light.9_kitchen_shelf_lamp"
+      service: "turn_on"
+      data:
+        color_temp: 370  # Warm white (mireds)
+
+  - name: "Set Cool White"
+    gesture: "Victory"
+    hand: "Left"
+    confidence: 0.8
+    action:
+      entity_id: "light.9_kitchen_shelf_lamp"
+      service: "turn_on"
+      data:
+        color_temp: 200  # Cool white (mireds)
+
+  # ====================
+  # RGB Color Control
+  # ====================
+
+  - name: "Set Red Color"
+    gesture: "ILoveYou"
+    hand: "Left"
+    confidence: 0.8
+    action:
+      entity_id: "light.9_kitchen_shelf_lamp"
+      service: "turn_on"
+      data:
+        rgb_color: [255, 0, 0]  # Red
+
+# ====================
+# Available MediaPipe Gestures (7 pre-trained):
+# ====================
+# 1. Closed_Fist (✊)     - Recommended for "Off" actions
+# 2. Open_Palm (✋)       - Recommended for "On" actions
+# 3. Pointing_Up (☝️)     - Recommended for "Increase" actions
+# 4. Thumb_Down (👎)     - Recommended for "Decrease" actions
+# 5. Thumb_Up (👍)       - Recommended for positive confirmations
+# 6. Victory (✌️)         - Recommended for alternate modes
+# 7. ILoveYou (🤟)       - Recommended for special actions
+#
+# Note: Gesture names are case-sensitive and must match exactly
+# ====================
+
+# ====================
+# Hand Options:
+# ====================
+# - "Left": Only left hand gestures trigger this action
+# - "Right": Only right hand gestures trigger this action
+# - "Either": Either hand can trigger this action
+# ====================
+
+# ====================
+# Home Assistant Services:
+# ====================
+# Common services for lights:
+# - turn_on: Turn on the light
+# - turn_off: Turn off the light
+# - toggle: Toggle the light state
+#
+# Common data parameters for turn_on:
+# - brightness: 0-255 (absolute brightness)
+# - brightness_pct: 0-100 (brightness percentage)
+# - brightness_step: -255 to 255 (relative brightness change)
+# - brightness_step_pct: -100 to 100 (relative brightness % change)
+# - color_temp: Color temperature in mireds (e.g., 153-500)
+# - rgb_color: [R, G, B] array (e.g., [255, 0, 0] for red)
+# - xy_color: [x, y] color coordinates
+# - color_name: Named color (e.g., "red", "blue", "green")
+# - kelvin: Color temperature in Kelvin (e.g., 2000-6500)
+# - transition: Transition time in seconds
+# ====================
