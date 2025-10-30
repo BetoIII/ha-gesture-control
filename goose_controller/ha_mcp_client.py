@@ -6,12 +6,53 @@ for executing device actions
 """
 
 import os
+import sys
 import logging
 import asyncio
 import httpx
 from typing import Dict, Any, Optional
 
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+try:
+    from config.constants import HA_MIN_TOKEN_LENGTH, HA_REQUEST_TIMEOUT
+except ImportError:
+    # Fallback to hardcoded values if constants not available
+    HA_MIN_TOKEN_LENGTH = 50
+    HA_REQUEST_TIMEOUT = 30.0
+
 logger = logging.getLogger(__name__)
+
+
+def load_token_securely(token_env_var: str) -> str:
+    """
+    Load token with proper validation and error handling.
+
+    Args:
+        token_env_var: Environment variable name containing the token
+
+    Returns:
+        The token string
+
+    Raises:
+        ValueError: If token is not set or appears invalid
+    """
+    token = os.getenv(token_env_var)
+
+    if not token:
+        raise ValueError(
+            f'Security: {token_env_var} not set. '
+            'Please configure your Home Assistant token.'
+        )
+
+    if len(token) < HA_MIN_TOKEN_LENGTH:  # HA tokens are typically ~180+ chars
+        logger.warning(f'{token_env_var} appears to be too short for a valid HA token')
+
+    # Never log the actual token - only log metadata
+    logger.info(f'Token loaded from {token_env_var} (length: {len(token)})')
+
+    return token
 
 
 class HomeAssistantMCPClient:
@@ -24,12 +65,12 @@ class HomeAssistantMCPClient:
         Args:
             mcp_url: Home Assistant MCP server URL (SSE endpoint)
             token_env_var: Environment variable name containing access token
+
+        Raises:
+            ValueError: If token is not set or appears invalid
         """
         self.mcp_url = mcp_url
-        self.token = os.getenv(token_env_var)
-
-        if not self.token:
-            logger.error(f'Home Assistant token not found in environment variable: {token_env_var}')
+        self.token = load_token_securely(token_env_var)
 
         # Extract base URL from MCP URL
         # Example: http://localhost:8123/mcp_server/sse -> http://localhost:8123
@@ -48,7 +89,7 @@ class HomeAssistantMCPClient:
                 'Authorization': f'Bearer {self.token}',
                 'Content-Type': 'application/json'
             },
-            timeout=10.0
+            timeout=HA_REQUEST_TIMEOUT
         )
         logger.info('HTTP client initialized')
 

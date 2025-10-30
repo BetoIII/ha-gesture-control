@@ -9,13 +9,64 @@ import socket
 import threading
 import logging
 import time
+import sys
+import os
 from typing import Dict, Any, Optional, Callable
+from dataclasses import dataclass
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+try:
+    from config.constants import (
+        DEFAULT_SOCKET_HOST,
+        DEFAULT_SOCKET_PORT,
+        SOCKET_RECV_SIZE,
+        SOCKET_ACCEPT_TIMEOUT
+    )
+except ImportError:
+    # Fallback to hardcoded values if constants not available
+    DEFAULT_SOCKET_HOST = 'localhost'
+    DEFAULT_SOCKET_PORT = 5555
+    SOCKET_RECV_SIZE = 1024
+    SOCKET_ACCEPT_TIMEOUT = 1.0
 
 from config_manager import ConfigManager
 from debouncer import GestureDebouncer, HoldTimeValidator
 from ha_mcp_client import SyncHomeAssistantClient
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class GestureData:
+    """Validated gesture data structure"""
+    gesture: str
+    hand: str
+    confidence: float
+    timestamp: float
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> Optional['GestureData']:
+        """
+        Create from dictionary with validation
+
+        Args:
+            data: Dictionary containing gesture data
+
+        Returns:
+            GestureData instance or None if validation fails
+        """
+        try:
+            return cls(
+                gesture=str(data['gesture']),
+                hand=str(data['hand']),
+                confidence=float(data['confidence']),
+                timestamp=float(data.get('timestamp', time.time()))
+            )
+        except (KeyError, ValueError, TypeError) as e:
+            logger.error(f'Invalid gesture data: {e}')
+            return None
 
 
 class GestureHandler:
@@ -95,7 +146,7 @@ class GestureHandler:
 
     def process_gesture(self, gesture_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
-        Process a gesture event
+        Process a gesture event with validation
 
         Args:
             gesture_data: Dictionary containing gesture information
@@ -109,11 +160,16 @@ class GestureHandler:
         """
         self.stats['gestures_received'] += 1
 
-        gesture_name = gesture_data.get('gesture')
-        hand = gesture_data.get('hand')
-        confidence = gesture_data.get('confidence', 0.0)
+        # Validate input
+        gesture_obj = GestureData.from_dict(gesture_data)
+        if gesture_obj is None:
+            logger.error(f'Skipping invalid gesture data: {gesture_data}')
+            return None
 
-        logger.debug(f'Processing gesture: {gesture_name} ({hand}) - confidence: {confidence:.2f}')
+        logger.debug(
+            f'Processing gesture: {gesture_obj.gesture} ({gesture_obj.hand}) '
+            f'- confidence: {gesture_obj.confidence:.2f}'
+        )
 
         # Broadcast gesture detection event
         if self.gesture_callback:
@@ -123,16 +179,17 @@ class GestureHandler:
                 logger.error(f'Error in gesture callback: {e}')
 
         # Check confidence threshold
-        if confidence < self.confidence_threshold:
+        if gesture_obj.confidence < self.confidence_threshold:
             self.stats['gestures_below_threshold'] += 1
             logger.debug(
-                f'Gesture below confidence threshold: {confidence:.2f} < {self.confidence_threshold}'
+                f'Gesture {gesture_obj.gesture} below threshold: '
+                f'{gesture_obj.confidence:.2f} < {self.confidence_threshold}'
             )
             return None
 
         # Check hold time
         is_held_long_enough, hold_duration = self.hold_validator.update_gesture(
-            gesture_name, hand
+            gesture_obj.gesture, gesture_obj.hand
         )
 
         if not is_held_long_enough:
@@ -143,19 +200,21 @@ class GestureHandler:
             return None
 
         # Check debouncing
-        if not self.debouncer.should_trigger(gesture_name, hand):
+        if not self.debouncer.should_trigger(gesture_obj.gesture, gesture_obj.hand):
             self.stats['gestures_debounced'] += 1
             return None
 
         # Find matching mapping
-        mapping = self.config_manager.get_mapping_for_gesture(gesture_name, hand)
+        mapping = self.config_manager.get_mapping_for_gesture(
+            gesture_obj.gesture, gesture_obj.hand
+        )
 
         if not mapping:
-            logger.debug(f'No mapping found for: {gesture_name} ({hand})')
+            logger.debug(f'No mapping found for: {gesture_obj.gesture} ({gesture_obj.hand})')
             return None
 
         # Execute action
-        logger.info(f'Executing action for gesture: {gesture_name} ({hand})')
+        logger.info(f'Executing action for gesture: {gesture_obj.gesture} ({gesture_obj.hand})')
         logger.info(f'Mapping: {mapping["name"]}')
 
         self.stats['actions_triggered'] += 1
@@ -178,7 +237,7 @@ class GestureHandler:
 
         return result
 
-    def start_socket_server(self, host: str = 'localhost', port: int = 5555):
+    def start_socket_server(self, host: str = DEFAULT_SOCKET_HOST, port: int = DEFAULT_SOCKET_PORT):
         """
         Start TCP socket server to receive gesture events
 
@@ -206,7 +265,7 @@ class GestureHandler:
             self.socket_server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.socket_server.bind((host, port))
             self.socket_server.listen(5)
-            self.socket_server.settimeout(1.0)  # Timeout for clean shutdown
+            self.socket_server.settimeout(SOCKET_ACCEPT_TIMEOUT)  # Timeout for clean shutdown
 
             logger.info(f'Socket server listening on {host}:{port}')
 
@@ -246,7 +305,7 @@ class GestureHandler:
         try:
             while self.socket_running:
                 # Receive data
-                data = conn.recv(1024)
+                data = conn.recv(SOCKET_RECV_SIZE)
 
                 if not data:
                     break

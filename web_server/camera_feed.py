@@ -7,8 +7,27 @@ Provides MJPEG video stream from the gesture recognition system
 import cv2
 import logging
 import time
+import sys
+import os
 from flask import Response
 import numpy as np
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+try:
+    from config.constants import (
+        MJPEG_QUALITY,
+        MJPEG_FRAME_DELAY,
+        DEFAULT_CAMERA_WIDTH,
+        DEFAULT_CAMERA_HEIGHT
+    )
+except ImportError:
+    # Fallback to hardcoded values if constants not available
+    MJPEG_QUALITY = 85
+    MJPEG_FRAME_DELAY = 0.033
+    DEFAULT_CAMERA_WIDTH = 640
+    DEFAULT_CAMERA_HEIGHT = 480
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +69,7 @@ class CameraFeed:
                     frame = self._generate_placeholder_frame()
 
                 # Encode frame as JPEG
-                ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, MJPEG_QUALITY])
 
                 if not ret:
                     logger.warning('Failed to encode frame')
@@ -66,8 +85,8 @@ class CameraFeed:
 
                 self.frame_count += 1
 
-                # Small delay to control frame rate (30 FPS)
-                time.sleep(0.033)
+                # Small delay to control frame rate
+                time.sleep(MJPEG_FRAME_DELAY)
 
         except GeneratorExit:
             logger.info('Client disconnected from MJPEG stream')
@@ -87,7 +106,7 @@ class CameraFeed:
             OpenCV frame (BGR format)
         """
         # Create black frame
-        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        frame = np.zeros((DEFAULT_CAMERA_HEIGHT, DEFAULT_CAMERA_WIDTH, 3), dtype=np.uint8)
 
         # Add text
         text = 'Camera Initializing...'
@@ -100,13 +119,13 @@ class CameraFeed:
         (text_width, text_height), _ = cv2.getTextSize(text, font, font_scale, thickness)
 
         # Center text
-        x = (640 - text_width) // 2
-        y = (480 + text_height) // 2
+        x = (DEFAULT_CAMERA_WIDTH - text_width) // 2
+        y = (DEFAULT_CAMERA_HEIGHT + text_height) // 2
 
         cv2.putText(frame, text, (x, y), font, font_scale, color, thickness)
 
         # Add camera icon (simple circle with a dot)
-        center_x, center_y = 320, 200
+        center_x, center_y = DEFAULT_CAMERA_WIDTH // 2, 200
         cv2.circle(frame, (center_x, center_y), 50, (100, 100, 100), 3)
         cv2.circle(frame, (center_x, center_y), 20, (100, 100, 100), -1)
         cv2.rectangle(frame, (center_x - 10, center_y - 60), (center_x + 10, center_y - 50), (100, 100, 100), -1)

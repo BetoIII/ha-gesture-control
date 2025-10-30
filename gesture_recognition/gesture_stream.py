@@ -13,7 +13,42 @@ import json
 import socket
 import threading
 import logging
+import sys
+import os
 from datetime import datetime
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+try:
+    from config.constants import (
+        DEFAULT_CAMERA_INDEX,
+        DEFAULT_CAMERA_WIDTH,
+        DEFAULT_CAMERA_HEIGHT,
+        DEFAULT_CAMERA_FPS,
+        DEFAULT_SOCKET_HOST,
+        DEFAULT_SOCKET_PORT,
+        MEDIAPIPE_MIN_DETECTION_CONFIDENCE,
+        MEDIAPIPE_MIN_TRACKING_CONFIDENCE,
+        MEDIAPIPE_MIN_HAND_PRESENCE_CONFIDENCE,
+        MEDIAPIPE_MAX_NUM_HANDS,
+        FRAME_PROCESSING_DELAY,
+        GESTURE_DEBOUNCE_TIME
+    )
+except ImportError:
+    # Fallback to hardcoded values if constants not available
+    DEFAULT_CAMERA_INDEX = 0
+    DEFAULT_CAMERA_WIDTH = 640
+    DEFAULT_CAMERA_HEIGHT = 480
+    DEFAULT_CAMERA_FPS = 30
+    DEFAULT_SOCKET_HOST = 'localhost'
+    DEFAULT_SOCKET_PORT = 5555
+    MEDIAPIPE_MIN_DETECTION_CONFIDENCE = 0.7
+    MEDIAPIPE_MIN_TRACKING_CONFIDENCE = 0.5
+    MEDIAPIPE_MIN_HAND_PRESENCE_CONFIDENCE = 0.7
+    MEDIAPIPE_MAX_NUM_HANDS = 2
+    FRAME_PROCESSING_DELAY = 0.01
+    GESTURE_DEBOUNCE_TIME = 1.0
 
 # Configure logging
 logging.basicConfig(
@@ -26,8 +61,10 @@ logger = logging.getLogger(__name__)
 class GestureRecognizer:
     """Hand gesture recognition using MediaPipe"""
 
-    def __init__(self, model_path='gesture_recognizer.task', camera_index=0,
-                 socket_host='localhost', socket_port=5555):
+    def __init__(self, model_path='gesture_recognizer.task',
+                 camera_index=DEFAULT_CAMERA_INDEX,
+                 socket_host=DEFAULT_SOCKET_HOST,
+                 socket_port=DEFAULT_SOCKET_PORT):
         """
         Initialize gesture recognizer
 
@@ -74,9 +111,9 @@ class GestureRecognizer:
             # Initialize hands detector
             self.hands = self.mp_hands.Hands(
                 static_image_mode=False,
-                max_num_hands=2,
-                min_detection_confidence=0.7,
-                min_tracking_confidence=0.5
+                max_num_hands=MEDIAPIPE_MAX_NUM_HANDS,
+                min_detection_confidence=MEDIAPIPE_MIN_DETECTION_CONFIDENCE,
+                min_tracking_confidence=MEDIAPIPE_MIN_TRACKING_CONFIDENCE
             )
 
             # Initialize gesture recognizer
@@ -84,10 +121,10 @@ class GestureRecognizer:
             options = mp.tasks.vision.GestureRecognizerOptions(
                 base_options=base_options,
                 running_mode=mp.tasks.vision.RunningMode.IMAGE,
-                num_hands=2,
-                min_hand_detection_confidence=0.7,
-                min_hand_presence_confidence=0.7,
-                min_tracking_confidence=0.5
+                num_hands=MEDIAPIPE_MAX_NUM_HANDS,
+                min_hand_detection_confidence=MEDIAPIPE_MIN_DETECTION_CONFIDENCE,
+                min_hand_presence_confidence=MEDIAPIPE_MIN_HAND_PRESENCE_CONFIDENCE,
+                min_tracking_confidence=MEDIAPIPE_MIN_TRACKING_CONFIDENCE
             )
             self.recognizer = mp.tasks.vision.GestureRecognizer.create_from_options(options)
 
@@ -108,9 +145,9 @@ class GestureRecognizer:
                 return False
 
             # Set camera properties
-            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-            self.cap.set(cv2.CAP_PROP_FPS, 30)
+            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, DEFAULT_CAMERA_WIDTH)
+            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, DEFAULT_CAMERA_HEIGHT)
+            self.cap.set(cv2.CAP_PROP_FPS, DEFAULT_CAMERA_FPS)
 
             logger.info(f'Camera {self.camera_index} initialized successfully')
             return True
@@ -214,7 +251,7 @@ class GestureRecognizer:
                     gesture_key = f"{handedness}_{gesture_name}"
 
                     if (self.last_gesture != gesture_key or
-                        current_time - self.last_gesture_time > 1.0):
+                        current_time - self.last_gesture_time > GESTURE_DEBOUNCE_TIME):
 
                         self.send_gesture_event(gesture_data)
                         self.last_gesture = gesture_key
@@ -281,7 +318,7 @@ class GestureRecognizer:
                 self.frame_count += 1
 
                 # Small delay to prevent CPU overload
-                time.sleep(0.01)
+                time.sleep(FRAME_PROCESSING_DELAY)
 
         except KeyboardInterrupt:
             logger.info('Stopping gesture recognition (keyboard interrupt)')
@@ -298,23 +335,39 @@ class GestureRecognizer:
         self.running = False
 
     def cleanup(self):
-        """Clean up resources"""
+        """Clean up resources safely"""
         logger.info('Cleaning up resources...')
 
+        # Safely release camera
         if self.cap is not None:
-            self.cap.release()
+            try:
+                self.cap.release()
+                logger.info('Camera released')
+            except Exception as e:
+                logger.error(f'Error releasing camera: {e}')
 
+        # Safely close MediaPipe components
         if self.hands is not None:
-            self.hands.close()
+            try:
+                self.hands.close()
+                logger.info('MediaPipe hands closed')
+            except Exception as e:
+                logger.error(f'Error closing hands: {e}')
 
         if self.recognizer is not None:
-            self.recognizer.close()
+            try:
+                self.recognizer.close()
+                logger.info('MediaPipe recognizer closed')
+            except Exception as e:
+                logger.error(f'Error closing recognizer: {e}')
 
+        # Safely close socket
         if self.socket_conn is not None:
             try:
                 self.socket_conn.close()
-            except:
-                pass
+                logger.info('Socket connection closed')
+            except Exception as e:
+                logger.error(f'Error closing socket: {e}')
 
         logger.info('Cleanup complete')
 
